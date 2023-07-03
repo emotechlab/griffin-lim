@@ -8,7 +8,7 @@ default = ["ndarray-linalg/intel-mkl"]
 
 [dependencies]
 anyhow = "1.0.71"
-lbfgsb = { git = "https://github.com/ybyygu/rust-lbfgsb.git" , rev="d374594"}
+lbfgsb = "0.1.0"
 ndarray = { version = "0.15.6", features = ["approx", "rayon"] }
 ndarray-linalg = "0.16.0"
 ndarray-rand = "0.14.0"
