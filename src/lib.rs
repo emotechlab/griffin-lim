@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use lbfgsb::lbfgsb;
 use ndarray::{par_azip, prelude::*, ScalarOperand};
 use ndarray_linalg::error::LinalgError;
@@ -9,20 +7,83 @@ use ndarray_rand::rand_distr::uniform::SampleUniform;
 use ndarray_rand::{rand_distr::Uniform, RandomExt};
 use ndarray_stats::errors::MinMaxError;
 use ndarray_stats::QuantileExt;
+use num_traits::{Float, FloatConst, FromPrimitive};
 use rand::SeedableRng;
 use rand_isaac::isaac64::Isaac64Rng;
 use realfft::num_complex::Complex;
 use realfft::num_traits;
 use realfft::num_traits::AsPrimitive;
 use realfft::RealFftPlanner;
+use std::fmt::Display;
 use tracing::warn;
+
+/// Parameters to provide to the griffin-lim vocoder
+pub struct Parameters<T> {
+    momentum: T,
+    seed: u64,
+    iter: usize,
+    init_random: bool,
+}
+
+impl<T> Default for Parameters<T>
+where
+    T: FromPrimitive + Float,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> Parameters<T>
+where
+    T: FromPrimitive + Float,
+{
+    /// Creates default parameters for the algorithm.
+    pub fn new() -> Self {
+        Self {
+            momentum: T::from_f32(0.99).unwrap(),
+            seed: 42,
+            iter: 32,
+            init_random: true,
+        }
+    }
+
+    /// Sets the momentum for fast Griffin-Lim. If set to zero this is the original implementation
+    /// as defined by _D. W. Griffin and J. S. Lim, "Signal estimation from modified short-time
+    /// Fourier transform,"_. The fast algorithm is defined in _Perraudin, N., Balazs, P., &
+    /// Søndergaard, P. L. "A fast Griffin-Lim algorithm,"_.
+    ///
+    /// Default value is 0.99
+    pub fn momentum(mut self, momentum: T) -> Self {
+        self.momentum = momentum;
+        self
+    }
+
+    /// A random seed to use for initializing the phase.
+    pub fn seed(mut self, seed: u64) -> Self {
+        self.seed = seed;
+        self
+    }
+
+    /// Number of iterations to run - default value is 32.
+    pub fn iter(mut self, iter: usize) -> Self {
+        self.iter = iter;
+        self
+    }
+
+    /// Specifies whether the phase values are initialised randomly, is true by default.
+    pub fn init_random(mut self, init_random: bool) -> Self {
+        self.init_random = init_random;
+        self
+    }
+}
 
 /// Get 'hann' window of length `n`
 /// Implements the path of functions:
 /// get_window() -> general_hamming() -> general_cosine()
 /// with sym=False
 /// https://github.com/scipy/scipy/blob/b5d8bab88af61d61de09641243848df63380a67f/scipy/signal/windows/_windows.py
-fn get_hann_window<T: num_traits::Float + num_traits::FloatConst>(n: usize) -> Array1<T> {
+fn get_hann_window<T: Float + FloatConst>(n: usize) -> Array1<T> {
     let alpha = 0.5;
     let a = vec![T::from(alpha).unwrap(), T::from(1. - alpha).unwrap()];
 
@@ -72,7 +133,7 @@ fn fft_helper<T: realfft::FftNum>(
 
 /// Compute the Short Time Fourier Transform (STFT)
 /// <https://github.com/scipy/scipy/blob/b5d8bab88af61d61de09641243848df63380a67f/scipy/signal/_spectral_py.py#L1025>
-fn stft<T: realfft::FftNum + num_traits::Float>(
+fn stft<T: realfft::FftNum + Float>(
     signal: &Array1<T>,
     window: &Array1<T>,
     planner: &mut RealFftPlanner<T>,
@@ -120,34 +181,41 @@ fn python_mod(n: i32, base: i32) -> i32 {
     n - base * (n as f32 / base as f32).floor() as i32
 }
 
-/// compute an estimate of real-valued time-domain signal
-/// from a magnitude spectrogram
-pub fn griffin_lim<
-    T: realfft::FftNum + num_traits::Float + num_traits::FloatConst + Display + SampleUniform,
->(
+pub fn griffin_lim<T>(
     spectrogram: &Array2<T>,
     nfft: usize,
     noverlap: usize,
-    rng_seed: Option<u64>,
-    momentum: T,
-    iter: usize,
-    init_random: bool,
 ) -> Result<Array1<T>, Box<dyn std::error::Error>>
 where
+    T: realfft::FftNum + Float + FloatConst + Display + SampleUniform,
+    Complex<T>: ScalarOperand,
+{
+    griffin_lim_with_params(spectrogram, nfft, noverlap, Parameters::new())
+}
+
+/// compute an estimate of real-valued time-domain signal
+/// from a magnitude spectrogram
+pub fn griffin_lim_with_params<T>(
+    spectrogram: &Array2<T>,
+    nfft: usize,
+    noverlap: usize,
+    params: Parameters<T>,
+) -> Result<Array1<T>, Box<dyn std::error::Error>>
+where
+    T: realfft::FftNum + Float + FloatConst + Display + SampleUniform,
     Complex<T>: ScalarOperand,
 {
     // set up griffin lim parameters
-    let rng_seed = rng_seed.unwrap_or(42);
-    let mut rng = Isaac64Rng::seed_from_u64(rng_seed);
-    if momentum > T::one() || momentum < T::zero() {
-        return Err(format!("Momentum is {}, should be in range [0,1]", momentum).into());
+    let mut rng = Isaac64Rng::seed_from_u64(params.seed);
+    if params.momentum > T::one() || params.momentum < T::zero() {
+        return Err(format!("Momentum is {}, should be in range [0,1]", params.momentum).into());
     }
 
     let window = get_hann_window(nfft);
     let spectrogram = spectrogram.mapv(|r| Complex::from(r));
 
     // Initialise estimate
-    let mut estimate = if init_random {
+    let mut estimate = if params.init_random {
         let mut angles = Array2::<T>::random_using(
             spectrogram.raw_dim(),
             Uniform::from(-T::PI()..T::PI()),
@@ -167,7 +235,7 @@ where
     let mut tprev: Option<Array2<Complex<T>>> = None;
     let planner = &mut RealFftPlanner::<T>::new();
 
-    for _ in 0..iter {
+    for _ in 0..params.iter {
         // Reconstruct signal approximately from the estimate
         inverse = istft(&estimate, &window, planner, nfft, noverlap);
         // Rebuild the spectrogram
@@ -175,7 +243,7 @@ where
         estimate.assign(&rebuilt);
         // Momentum parameter ensures faster convergence
         if let Some(tprev) = &mut tprev {
-            let delta = &*tprev * Complex::from(momentum / (T::one() + momentum));
+            let delta = &*tprev * Complex::from(params.momentum / (T::one() + params.momentum));
             estimate = estimate - delta;
             std::mem::swap(tprev, &mut rebuilt);
         } else {
@@ -470,7 +538,8 @@ mod tests {
         // Test
         let nfft = 2 * (spectrogram.dim().1 - 1);
         let noverlap = nfft / 2;
-        let actual = griffin_lim::<f64>(&spectrogram, nfft, noverlap, None, 0.4, 3, false).unwrap();
+        let params = Parameters::new().momentum(0.4).iter(3).init_random(false);
+        let actual = griffin_lim_with_params::<f64>(&spectrogram, nfft, noverlap, params).unwrap();
 
         // Assert
         assert_eq!(expected.len(), actual.len());
