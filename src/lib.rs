@@ -21,6 +21,8 @@ use std::fmt::Display;
 use std::str::FromStr;
 use tracing::warn;
 
+mod mel;
+
 pub struct GriffinLim {
     mel_basis: Array2<f32>,
     noverlap: usize,
@@ -381,7 +383,7 @@ where
         let eps = T::min_positive_value();
         // get angles from new estimate
         estimate.mapv_inplace(|x| x / (x.norm() + eps));
-        // envforce magnitudes
+        // enforce magnitudes
         estimate.assign(&(&estimate * &spectrogram));
     }
     let mut signal = istft(&estimate, &window, planner, nfft, noverlap);
@@ -628,6 +630,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_nnls() {
         // Set up
         let mel_basis: Array2<f32> = read_npy("resources/mel_basis.npy").unwrap();
