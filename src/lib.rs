@@ -3,6 +3,7 @@ use ndarray::{par_azip, prelude::*, ScalarOperand};
 use ndarray_linalg::error::LinalgError;
 use ndarray_linalg::svd::SVD;
 use ndarray_linalg::{Lapack, Scalar};
+use ndarray_npy::read_npy;
 use ndarray_rand::rand_distr::uniform::SampleUniform;
 use ndarray_rand::{rand_distr::Uniform, RandomExt};
 use ndarray_stats::errors::MinMaxError;
@@ -14,8 +15,135 @@ use realfft::num_complex::Complex;
 use realfft::num_traits;
 use realfft::num_traits::AsPrimitive;
 use realfft::RealFftPlanner;
+use std::env::{self, VarError};
+use std::error::Error;
 use std::fmt::Display;
+use std::str::FromStr;
 use tracing::warn;
+
+pub struct GriffinLim {
+    mel_basis: Array2<f32>,
+    noverlap: usize,
+    power: f32,
+    pub iter: usize,
+    pub momentum: f32,
+}
+
+/// Utility to get environment variable with name `name` and parses it to type `T`
+/// returning `default` if the variable is not set and an error if parsing fails
+fn env_default<T: FromStr>(name: &'static str, default: T) -> Result<T, String>
+where
+    <T as FromStr>::Err: std::error::Error,
+{
+    match env::var(name) {
+        Ok(val) => match val.parse() {
+            Ok(result) => Ok(result),
+            Err(e) => Err(format!("Failed to parse env var {}: {}", name, e)),
+        },
+        Err(e) => match e {
+            VarError::NotPresent => Ok(default),
+            VarError::NotUnicode(_) => {
+                Err(format!("Failed to parse env var {}: invalid unicode", name))
+            }
+        },
+    }
+}
+
+impl GriffinLim {
+    pub fn new_from_env() -> Result<Self, Box<dyn Error>> {
+        let mel_basis_npy = env_default(
+            "GRIFFINLIM_MEL_BASIS",
+            "resources/mel_basis.npy".to_string(),
+        )?;
+        let mel_basis = read_npy::<_, Array2<f32>>(mel_basis_npy)?;
+        let noverlap = env_default("GRIFFINLIM_NOVERLAP", 768)?;
+        let power = env_default("GRIFFINLIM_POWER", 2.0 / 3.0)?;
+        let iter = env_default("GRIFFINLIM_ITER", 10)?;
+        let momentum = env_default("GRIFFINLIM_MOMENTUM", 0.99)?;
+        Ok(Self::new(mel_basis, noverlap, power, iter, momentum)?)
+    }
+
+    pub fn new_from_env_static(mel_basis: Array2<f32>) -> Result<Self, Box<dyn Error>> {
+        let noverlap = env_default("GRIFFINLIM_NOVERLAP", 768)?;
+        let power = env_default("GRIFFINLIM_POWER", 2.0 / 3.0)?;
+        let iter = env_default("GRIFFINLIM_ITER", 10)?;
+        let momentum = env_default("GRIFFINLIM_MOMENTUM", 0.99)?;
+        Ok(Self::new(mel_basis, noverlap, power, iter, momentum)?)
+    }
+
+    pub fn new(
+        mel_basis: Array2<f32>,
+        noverlap: usize,
+        power: f32,
+        iter: usize,
+        momentum: f32,
+    ) -> Result<Self, Box<dyn Error>> {
+        let nfft = 2 * (mel_basis.dim().1 - 1);
+        if noverlap >= nfft {
+            return Err(format!(
+                "nnft must be < noverlap - nfft: {}, noverlap: {}",
+                nfft, noverlap
+            )
+            .into());
+        }
+
+        if momentum > 1.0 || momentum < 0.0 {
+            return Err(format!("Momentum is {}, should be in range [0,1]", momentum).into());
+        }
+
+        if power <= 0.0 {
+            return Err(format!("Power is {}, should be > 0", power).into());
+        }
+
+        Ok(Self {
+            mel_basis,
+            noverlap,
+            power,
+            iter,
+            momentum,
+        })
+    }
+
+    pub fn infer(&self, mel_spec: &Array2<f32>) -> Result<Array1<f32>, Box<dyn Error>> {
+        // mel_basis has dims (nmel, nfft)
+        // lin_spec has dims (nfft, time)
+        // mel_spec has dims (nmel, time)
+        // need to transpose for griffin lim - maybe do this internally?
+        let mut lin_spec = nnls(&self.mel_basis, &mel_spec.mapv(|x| 10.0_f32.powf(x)), 1e-15)?;
+
+        // correct for "power" parameter of mel-spectrogram
+        lin_spec.mapv_inplace(|x| x.powf(1.0 / self.power));
+
+        let params = Parameters {
+            momentum: self.momentum,
+            iter: self.iter,
+            ..Default::default()
+        };
+
+        // reconstruct signal
+        let mut reconstructed = griffin_lim_with_params(
+            &lin_spec.t().as_standard_layout().to_owned(),
+            2 * (self.mel_basis.dim().1 - 1),
+            self.noverlap,
+            params,
+        )?;
+
+        // Normalise audio by RMS
+        let signal_rms = f32::sqrt(
+            reconstructed.iter().fold(0.0, |_s, s| _s + s.powf(2.0)) / reconstructed.len() as f32,
+        );
+
+        let target_gain: f32 = 0.1;
+
+        // Gain factor to reach the target RMS based on the
+        // RMS of the signal, more samples = more flat amplitude.
+        let scale = target_gain / signal_rms;
+
+        reconstructed.mapv_inplace(|x| x * scale);
+
+        Ok(reconstructed)
+    }
+}
 
 /// Parameters to provide to the griffin-lim vocoder
 pub struct Parameters<T> {
