@@ -12,14 +12,42 @@ pub fn mel(
         None => sample_rate / 2.0,
     };
 
-    // let mut weights = Array2::zeros((n_mels, 1 + n_fft / 2));
+    let mut weights: Array2<f32> = Array2::zeros((n_mels, 1 + n_fft / 2));
 
     let fft_freqs = fft_frequencies(n_fft as isize, sample_rate);
-    let mel_freqs = mel_frequencies(n_mels + 2, Some(fmin), fmax);
+    let mel_freqs = mel_frequencies(n_mels + 2, Some(fmin), Some(fmax));
 
     // librosa/filters.py
+    let mut fdiff: Array1<f32> = Array1::zeros(mel_freqs.len() - 1);
+    for i in 1..mel_freqs.len() {
+        fdiff[i - 1] = mel_freqs[i] - mel_freqs[i - 1];
+    }
 
-    todo!()
+    let mut ramps: Array2<f32> = Array2::zeros((mel_freqs.len(), fft_freqs.len()));
+
+    for r in 0..mel_freqs.len() {
+        for c in 0..fft_freqs.len() {
+            ramps[[r, c]] = mel_freqs[r] - fft_freqs[c];
+        }
+    }
+
+    for i in 0..n_mels {
+        let lower = -&ramps.row(i) / fdiff[i];
+        let upper = &ramps.row(i + 2) / fdiff[i + 1];
+
+        let mut row = weights.row_mut(i);
+        for (store, (lower, upper)) in row.iter_mut().zip(lower.iter().zip(upper.iter())) {
+            *store = 0.0_f32.max(lower.min(*upper));
+        }
+    }
+
+    let norm: Array1<f32> =
+        2.0 / (&mel_freqs.slice(s![2..(n_mels + 2)]) - &mel_freqs.slice(s![..n_mels]));
+
+    for mut col in weights.columns_mut() {
+        col *= &norm;
+    }
+    weights
 }
 
 /// Ported from [numpy](https://numpy.org/doc/stable/reference/generated/numpy.fft.fftfreq.html)
