@@ -1,3 +1,4 @@
+use crate::mel::mel;
 use lbfgsb::lbfgsb;
 use ndarray::{par_azip, prelude::*, ScalarOperand};
 use ndarray_linalg::error::LinalgError;
@@ -21,7 +22,7 @@ use std::fmt::Display;
 use std::str::FromStr;
 use tracing::warn;
 
-mod mel;
+pub mod mel;
 
 pub struct GriffinLim {
     mel_basis: Array2<f32>,
@@ -53,11 +54,20 @@ where
 
 impl GriffinLim {
     pub fn new_from_env() -> Result<Self, Box<dyn Error>> {
-        let mel_basis_npy = env_default(
-            "GRIFFINLIM_MEL_BASIS",
-            "resources/mel_basis.npy".to_string(),
-        )?;
-        let mel_basis = read_npy::<_, Array2<f32>>(mel_basis_npy)?;
+        let mel_basis = match env::var("GRIFFIN_LIM_MEL_BASIS") {
+            Ok(mel_basis_npy) => read_npy::<_, Array2<f32>>(mel_basis_npy)?,
+            _ => {
+                let sample_rate = env_default("GRIFFINLIM_SR", 22050.0)?;
+                let n_fft = env_default("GRIFFINLIM_N_FFTS", 512)?;
+                let n_mels = env_default("GRIFFINLIM_N_MELS", 512)?;
+                let f_min = env_default("GRIFFINLIM_FMIN", 0.0)?;
+                let f_max = env::var("GRIFFINLIM_FMAX")
+                    .ok()
+                    .and_then(|x| x.parse::<f32>().ok());
+
+                mel(sample_rate, n_fft, n_mels, f_min, f_max)
+            }
+        };
         let noverlap = env_default("GRIFFINLIM_NOVERLAP", 768)?;
         let power = env_default("GRIFFINLIM_POWER", 2.0 / 3.0)?;
         let iter = env_default("GRIFFINLIM_ITER", 10)?;
@@ -630,7 +640,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_nnls() {
         // Set up
         let mel_basis: Array2<f32> = read_npy("resources/mel_basis.npy").unwrap();
@@ -674,6 +683,7 @@ mod tests {
 
         // Assert
         assert_eq!(expected.len(), actual.len());
+
         for (e, a) in expected.iter().zip(actual.iter()) {
             // ISTFT / STFT normalisation is different
             // Factor of 2.0 here as librosa normalisation is different to scipy
