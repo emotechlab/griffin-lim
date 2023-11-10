@@ -113,7 +113,24 @@ fn mel_to_hz(mels: f32) -> f32 {
 mod tests {
     use super::*;
     use float_cmp::assert_approx_eq;
-    use ndarray::arr1;
+    use ndarray_npy::read_npy;
+
+    #[test]
+    fn compare_basis() {
+        let mel_basis: Array2<f32> = read_npy("resources/mel_basis.npy").unwrap();
+
+        let actual = mel(22050.0, 513, 80, 0.0, None);
+
+        assert_eq!(mel_basis.dim(), actual.dim());
+
+        for r in 0..mel_basis.nrows() {
+            println!("Row: {}", r);
+            for c in 0..mel_basis.ncols() {
+                println!("Col: {}", c);
+                assert_approx_eq!(f32, mel_basis[[r, c]], actual[[r, c]], epsilon = 0.0001);
+            }
+        }
+    }
 
     #[test]
     fn generate_mel_basis() {
