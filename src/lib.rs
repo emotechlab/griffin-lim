@@ -1,10 +1,8 @@
-use crate::mel::mel;
 use lbfgsb::lbfgsb;
 use ndarray::{par_azip, prelude::*, ScalarOperand};
 use ndarray_linalg::error::LinalgError;
 use ndarray_linalg::svd::SVD;
 use ndarray_linalg::{Lapack, Scalar};
-use ndarray_npy::read_npy;
 use ndarray_rand::rand_distr::uniform::SampleUniform;
 use ndarray_rand::{rand_distr::Uniform, RandomExt};
 use ndarray_stats::errors::MinMaxError;
@@ -16,10 +14,8 @@ use realfft::num_complex::Complex;
 use realfft::num_traits;
 use realfft::num_traits::AsPrimitive;
 use realfft::RealFftPlanner;
-use std::env::{self, VarError};
 use std::error::Error;
 use std::fmt::Display;
-use std::str::FromStr;
 use tracing::warn;
 
 pub mod mel;
@@ -32,79 +28,29 @@ pub struct GriffinLim {
     pub momentum: f32,
 }
 
-/// Utility to get environment variable with name `name` and parses it to type `T`
-/// returning `default` if the variable is not set and an error if parsing fails
-fn env_default<T: FromStr>(name: &'static str, default: T) -> Result<T, String>
-where
-    <T as FromStr>::Err: std::error::Error,
-{
-    match env::var(name) {
-        Ok(val) => match val.parse() {
-            Ok(result) => Ok(result),
-            Err(e) => Err(format!("Failed to parse env var {}: {}", name, e)),
-        },
-        Err(e) => match e {
-            VarError::NotPresent => Ok(default),
-            VarError::NotUnicode(_) => {
-                Err(format!("Failed to parse env var {}: invalid unicode", name))
-            }
-        },
-    }
-}
-
 impl GriffinLim {
-    pub fn new_from_env() -> Result<Self, Box<dyn Error>> {
-        let mel_basis = match env::var("GRIFFIN_LIM_MEL_BASIS") {
-            Ok(mel_basis_npy) => read_npy::<_, Array2<f32>>(mel_basis_npy)?,
-            _ => {
-                let sample_rate = env_default("GRIFFINLIM_SR", 22050.0)?;
-                let n_fft = env_default("GRIFFINLIM_N_FFTS", 512)?;
-                let n_mels = env_default("GRIFFINLIM_N_MELS", 512)?;
-                let f_min = env_default("GRIFFINLIM_FMIN", 0.0)?;
-                let f_max = env::var("GRIFFINLIM_FMAX")
-                    .ok()
-                    .and_then(|x| x.parse::<f32>().ok());
-
-                mel(sample_rate, n_fft, n_mels, f_min, f_max)
-            }
-        };
-        let noverlap = env_default("GRIFFINLIM_NOVERLAP", 768)?;
-        let power = env_default("GRIFFINLIM_POWER", 2.0 / 3.0)?;
-        let iter = env_default("GRIFFINLIM_ITER", 10)?;
-        let momentum = env_default("GRIFFINLIM_MOMENTUM", 0.99)?;
-        Ok(Self::new(mel_basis, noverlap, power, iter, momentum)?)
-    }
-
-    pub fn new_from_env_static(mel_basis: Array2<f32>) -> Result<Self, Box<dyn Error>> {
-        let noverlap = env_default("GRIFFINLIM_NOVERLAP", 768)?;
-        let power = env_default("GRIFFINLIM_POWER", 2.0 / 3.0)?;
-        let iter = env_default("GRIFFINLIM_ITER", 10)?;
-        let momentum = env_default("GRIFFINLIM_MOMENTUM", 0.99)?;
-        Ok(Self::new(mel_basis, noverlap, power, iter, momentum)?)
-    }
-
     pub fn new(
         mel_basis: Array2<f32>,
         noverlap: usize,
         power: f32,
         iter: usize,
         momentum: f32,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> anyhow::Result<Self> {
         let nfft = 2 * (mel_basis.dim().1 - 1);
         if noverlap >= nfft {
-            return Err(format!(
+            anyhow::bail!(
                 "nnft must be < noverlap - nfft: {}, noverlap: {}",
-                nfft, noverlap
-            )
-            .into());
+                nfft,
+                noverlap
+            );
         }
 
         if momentum > 1.0 || momentum < 0.0 {
-            return Err(format!("Momentum is {}, should be in range [0,1]", momentum).into());
+            anyhow::bail!("Momentum is {}, should be in range [0,1]", momentum);
         }
 
         if power <= 0.0 {
-            return Err(format!("Power is {}, should be > 0", power).into());
+            anyhow::bail!("Power is {}, should be > 0", power);
         }
 
         Ok(Self {
