@@ -9,9 +9,11 @@ use std::time::Instant;
 fn main() -> Result<(), Box<dyn Error>> {
     let spectrogram: Array2<f32> = read_npy("resources/example_spectrogram.npy")?;
 
+    let mel_basis = griffin_lim::mel::create_mel_filter_bank(22050.0, 1024, 80, 0.0, Some(8000.0));
+
     for iter in [0, 1, 2, 5, 10] {
         let timer = Instant::now();
-        let mut vocoder = GriffinLim::new_from_env()?;
+        let mut vocoder = GriffinLim::new(mel_basis.clone(), 1024 - 256, 1.5, 1, 0.99)?;
         vocoder.iter = iter;
         let audio = vocoder.infer(&spectrogram)?;
         let duration = Instant::now().duration_since(timer);

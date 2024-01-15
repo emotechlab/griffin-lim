@@ -1,6 +1,6 @@
 use ndarray::prelude::*;
 
-pub fn mel(
+pub fn create_mel_filter_bank(
     sample_rate: f32,
     n_fft: usize,
     n_mels: usize,
@@ -119,7 +119,7 @@ mod tests {
     fn compare_basis() {
         let mel_basis: Array2<f32> = read_npy("resources/mel_basis.npy").unwrap();
 
-        let actual = mel(22050.0, 513, 80, 0.0, None);
+        let actual = create_mel_filter_bank(22050.0, 513, 80, 0.0, None);
 
         assert_eq!(mel_basis.dim(), actual.dim());
 
