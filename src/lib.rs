@@ -1,3 +1,4 @@
+use anyhow::bail;
 use lbfgsb::lbfgsb;
 use ndarray::{par_azip, prelude::*, ScalarOperand};
 use ndarray_linalg::error::LinalgError;
@@ -14,7 +15,6 @@ use realfft::num_complex::Complex;
 use realfft::num_traits;
 use realfft::num_traits::AsPrimitive;
 use realfft::RealFftPlanner;
-use std::error::Error;
 use std::fmt::Display;
 use tracing::warn;
 
@@ -38,7 +38,7 @@ impl GriffinLim {
     ) -> anyhow::Result<Self> {
         let nfft = 2 * (mel_basis.dim().1 - 1);
         if noverlap >= nfft {
-            anyhow::bail!(
+            bail!(
                 "nnft must be < noverlap - nfft: {}, noverlap: {}",
                 nfft,
                 noverlap
@@ -46,11 +46,11 @@ impl GriffinLim {
         }
 
         if momentum > 1.0 || momentum < 0.0 {
-            anyhow::bail!("Momentum is {}, should be in range [0,1]", momentum);
+            bail!("Momentum is {}, should be in range [0,1]", momentum);
         }
 
         if power <= 0.0 {
-            anyhow::bail!("Power is {}, should be > 0", power);
+            bail!("Power is {}, should be > 0", power);
         }
 
         Ok(Self {
@@ -62,7 +62,7 @@ impl GriffinLim {
         })
     }
 
-    pub fn infer(&self, mel_spec: &Array2<f32>) -> Result<Array1<f32>, Box<dyn Error>> {
+    pub fn infer(&self, mel_spec: &Array2<f32>) -> anyhow::Result<Array1<f32>> {
         // mel_basis has dims (nmel, nfft)
         // lin_spec has dims (nfft, time)
         // mel_spec has dims (nmel, time)
@@ -271,7 +271,7 @@ pub fn griffin_lim<T>(
     spectrogram: &Array2<T>,
     nfft: usize,
     noverlap: usize,
-) -> Result<Array1<T>, Box<dyn std::error::Error>>
+) -> anyhow::Result<Array1<T>>
 where
     T: realfft::FftNum + Float + FloatConst + Display + SampleUniform,
     Complex<T>: ScalarOperand,
@@ -286,7 +286,7 @@ pub fn griffin_lim_with_params<T>(
     nfft: usize,
     noverlap: usize,
     params: Parameters<T>,
-) -> Result<Array1<T>, Box<dyn std::error::Error>>
+) -> anyhow::Result<Array1<T>>
 where
     T: realfft::FftNum + Float + FloatConst + Display + SampleUniform,
     Complex<T>: ScalarOperand,
@@ -294,7 +294,7 @@ where
     // set up griffin lim parameters
     let mut rng = Isaac64Rng::seed_from_u64(params.seed);
     if params.momentum > T::one() || params.momentum < T::zero() {
-        return Err(format!("Momentum is {}, should be in range [0,1]", params.momentum).into());
+        bail!("Momentum is {}, should be in range [0,1]", params.momentum);
     }
 
     let window = get_hann_window(nfft);
