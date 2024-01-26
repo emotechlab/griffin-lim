@@ -342,7 +342,7 @@ where
     debug_dump_array!("estimate_spec_0.npy", estimate);
 
     // TODO: Pre-allocate inverse and rebuilt and use `.assign` instead of `=`
-    // this requires some fighting with the borow checker
+    // this requires some fighting with the borrow checker
     let mut inverse: Array1<T>;
     let mut rebuilt: Array2<Complex<T>>;
     let mut tprev: Option<Array2<Complex<T>>> = None;
@@ -362,7 +362,7 @@ where
         } else {
             tprev = Some(rebuilt);
         }
-        // Get angles from estimate and apply to magnitueds
+        // Get angles from estimate and apply to magnitudes
         let eps = T::min_positive_value();
         // get angles from new estimate
         estimate.mapv_inplace(|x| x / (x.norm() + eps));

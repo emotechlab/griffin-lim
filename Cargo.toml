@@ -5,6 +5,7 @@ edition = "2021"
 
 [features]
 default = ["ndarray-linalg/intel-mkl"]
+# Do not use me unless you want a lot of npy files dumped in your CWD
 debug_dump = ["ndarray-npy"]
 
 [dependencies]
