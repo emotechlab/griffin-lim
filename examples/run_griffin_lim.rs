@@ -11,29 +11,30 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mel_basis = griffin_lim::mel::create_mel_filter_bank(22050.0, 1024, 80, 0.0, Some(8000.0));
 
-    for iter in [0, 1, 2, 5, 10] {
-        let timer = Instant::now();
-        let mut vocoder = GriffinLim::new(mel_basis.clone(), 1024 - 256, 1.5, 1, 0.99)?;
-        vocoder.iter = iter;
-        let audio = vocoder.infer(&spectrogram)?;
-        let duration = Instant::now().duration_since(timer);
-        let rtf = duration.as_secs_f32() / (audio.len() as f32 / 22050_f32);
-        println!("Iterations: {}, rtf: {}", iter, rtf);
-        let spec = WavSpec {
-            channels: 1,
-            sample_rate: 22050,
-            bits_per_sample: 32,
-            sample_format: SampleFormat::Float,
-        };
+    let iter = 30;
 
-        let mut writer = WavWriter::create(format!("audio_output_griffinlim_{}.wav", iter), spec)?;
+    let timer = Instant::now();
+    let mut vocoder = GriffinLim::new(mel_basis.clone(), 1024 - 256, 1.7, iter, 0.99)?;
+    let audio = vocoder.infer(&spectrogram)?;
+    let duration = Instant::now().duration_since(timer);
+    let rtf = duration.as_secs_f32() / (audio.len() as f32 / 22050_f32);
+    println!("Iterations: {}, rtf: {}", iter, rtf);
+        
+    let spec = WavSpec {
+        channels: 1,
+        sample_rate: 22050,
+        bits_per_sample: 16,
+        sample_format: SampleFormat::Int,
+    };
 
-        for sample in audio {
-            writer.write_sample(sample)?;
-        }
+    let mut wav_writer = WavWriter::create(format!("audio_output_griffinlim_{}.wav", iter), spec)?;
 
-        writer.finalize()?;
-        println!("Saved audio_output_griffinlim_{}.wav", iter);
+    let mut i16_writer = wav_writer.get_i16_writer(audio.len() as u32);
+    for sample in &audio {
+        i16_writer.write_sample((*sample * i16::MAX as f32) as i16);
     }
+    i16_writer.flush()?;
+
+    println!("Saved audio_output_griffinlim_{}.wav", iter);
     Ok(())
 }

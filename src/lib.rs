@@ -17,6 +17,27 @@ use realfft::num_traits::AsPrimitive;
 use realfft::RealFftPlanner;
 use std::fmt::Display;
 use tracing::warn;
+#[cfg(feature = "debug_dump")]
+use ndarray_npy::WritableElement;
+
+macro_rules! debug_dump_array {
+    ($file:expr, $array:expr) => {
+        #[cfg(feature = "debug_dump")]
+        if let Err(e) = ndarray_npy::write_npy($file, &$array.view()) {
+            tracing::error!("Failed to write '{:?}': {}", $file, e);
+        }
+    }
+}
+
+/// Do not use this in any real way. Because we can't cfg on trait bounds and want to ensure the
+/// matrices are dump-able via trait bounds we need to remove the cfg from the trait bound and push
+/// it up to here. I tried doing this via trait inheritance but this didn't work for the `Complex<T>`
+/// bound and this seemed the only reliable way.
+#[cfg(not(feature = "debug_dump"))]
+pub trait WritableElement{}
+
+#[cfg(not(feature = "debug_dump"))]
+impl<T> WritableElement for T {}
 
 pub mod mel;
 
@@ -36,6 +57,7 @@ impl GriffinLim {
         iter: usize,
         momentum: f32,
     ) -> anyhow::Result<Self> {
+        debug_dump_array!("mel_basis.npy", mel_basis);
         let nfft = 2 * (mel_basis.dim().1 - 1);
         if noverlap >= nfft {
             bail!(
@@ -63,11 +85,13 @@ impl GriffinLim {
     }
 
     pub fn infer(&self, mel_spec: &Array2<f32>) -> anyhow::Result<Array1<f32>> {
+        debug_dump_array!("mel_spectrogram.npy", mel_spec);
         // mel_basis has dims (nmel, nfft)
         // lin_spec has dims (nfft, time)
         // mel_spec has dims (nmel, time)
         // need to transpose for griffin lim - maybe do this internally?
         let mut lin_spec = nnls(&self.mel_basis, &mel_spec.mapv(|x| 10.0_f32.powf(x)), 1e-15)?;
+        debug_dump_array!("linear_spectrogram.npy", lin_spec);
 
         // correct for "power" parameter of mel-spectrogram
         lin_spec.mapv_inplace(|x| x.powf(1.0 / self.power));
@@ -273,8 +297,8 @@ pub fn griffin_lim<T>(
     noverlap: usize,
 ) -> anyhow::Result<Array1<T>>
 where
-    T: realfft::FftNum + Float + FloatConst + Display + SampleUniform,
-    Complex<T>: ScalarOperand,
+    T: realfft::FftNum + Float + FloatConst + Display + SampleUniform + WritableElement,
+    Complex<T>: ScalarOperand + WritableElement,
 {
     griffin_lim_with_params(spectrogram, nfft, noverlap, Parameters::new())
 }
@@ -288,8 +312,8 @@ pub fn griffin_lim_with_params<T>(
     params: Parameters<T>,
 ) -> anyhow::Result<Array1<T>>
 where
-    T: realfft::FftNum + Float + FloatConst + Display + SampleUniform,
-    Complex<T>: ScalarOperand,
+    T: realfft::FftNum + Float + FloatConst + Display + SampleUniform + WritableElement,
+    Complex<T>: ScalarOperand + WritableElement,
 {
     // set up griffin lim parameters
     let mut rng = Isaac64Rng::seed_from_u64(params.seed);
@@ -314,6 +338,9 @@ where
     } else {
         spectrogram.clone()
     };
+    let mut est_i = 1;
+    debug_dump_array!("estimate_spec_0.npy", estimate);
+
     // TODO: Pre-allocate inverse and rebuilt and use `.assign` instead of `=`
     // this requires some fighting with the borow checker
     let mut inverse: Array1<T>;
@@ -341,6 +368,9 @@ where
         estimate.mapv_inplace(|x| x / (x.norm() + eps));
         // enforce magnitudes
         estimate.assign(&(&estimate * &spectrogram));
+
+        debug_dump_array!(format!("estimate_spec_{}.npy", est_i), estimate);
+        est_i += 1;
     }
     let mut signal = istft(&estimate, &window, planner, nfft, noverlap);
     let norm = T::from(nfft).unwrap();
