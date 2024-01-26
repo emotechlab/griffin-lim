@@ -39,4 +39,4 @@ the spectrogram we can see a hint of the mel spectrograms form.
 
 And listen to the output:
 
-![audio](./output.wav)
+![audio](https://github.com/emotechlab/griffin-lim/raw/docs/super-guide-time/doc/output.wav)
