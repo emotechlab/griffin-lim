@@ -91,10 +91,10 @@ impl GriffinLim {
         // mel_spec has dims (nmel, time)
         // need to transpose for griffin lim - maybe do this internally?
         let mut lin_spec = nnls(&self.mel_basis, &mel_spec.mapv(|x| 10.0_f32.powf(x)), 1e-15)?;
-        debug_dump_array!("linear_spectrogram.npy", lin_spec);
 
         // correct for "power" parameter of mel-spectrogram
         lin_spec.mapv_inplace(|x| x.powf(1.0 / self.power));
+        debug_dump_array!("linear_spectrogram.npy", lin_spec);
 
         let params = Parameters {
             momentum: self.momentum,
@@ -338,7 +338,7 @@ where
     } else {
         spectrogram.clone()
     };
-    let mut est_i = 1;
+    let mut _est_i = 1;
     debug_dump_array!("estimate_spec_0.npy", estimate);
 
     // TODO: Pre-allocate inverse and rebuilt and use `.assign` instead of `=`
@@ -369,8 +369,8 @@ where
         // enforce magnitudes
         estimate.assign(&(&estimate * &spectrogram));
 
-        debug_dump_array!(format!("estimate_spec_{}.npy", est_i), estimate);
-        est_i += 1;
+        debug_dump_array!(format!("estimate_spec_{}.npy", _est_i), estimate);
+        _est_i += 1;
     }
     let mut signal = istft(&estimate, &window, planner, nfft, noverlap);
     let norm = T::from(nfft).unwrap();
