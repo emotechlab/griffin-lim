@@ -107,10 +107,41 @@ this can result in the warbly sound that people complain of with Griffin-Lim and
 ultimately why it's been abandoned for slower but more accurate neural network based
 vocoders.
 
+This is only a high level overview if you're interested in understanding this
+more fully the paper for Griffin Lim can be found easily via Google. Also the maths
+behind this generally comes from signal processing (STFT, Fourier Transforms)
+and non-linear optimisation (BGFS). There are numerous courses/videos/books
+that cover these if you want to find a resource to go deeper into it.
+
 ### Some Sample Steps
+
+Where we start on our estimate:
+
+![image](./resources/estimate_0.png)
+
+After the first iteration:
+
+![image](./resources/estimate_1.png)
+
+The end:
+
+![image](./resources/estimate_10.png)
+
+Now I'm not sure where these blocks come from in the spectrogram generation,
+the current feeling is it's a mistake in my plotting or some nuance of librosa
+fiddling with the spectrogram for plotting purposes. Any insight on this would
+be appreciated!
 
 ## The Audio
 
 And listen to the output:
 
-![audio](https://github.com/emotechlab/griffin-lim/raw/docs/super-guide-time/doc/output.wav)
+![audio](https://github.com/emotechlab/griffin-lim/raw/tutorial/super-guide-time/doc/output.wav)
+
+## Conclusion
+
+Hopefully this was insightful to some of the process. One thing skipped is that
+this is a "fast" version of Griffin-Lim which adds a momentum parameter to move
+more quickly towards convergence. We also made substantial use of
+[librosa](https://librosa.org/) as a reference implementation to test correctness
+and examine how the algorithm works.

@@ -3,6 +3,7 @@ import librosa
 import numpy as np
 import os
 import matplotlib.pyplot as plt
+import sys
 
 # Rerun the rust code
 re_run = False
@@ -19,6 +20,9 @@ def plot_complex_spec(spec, name):
                              y_axis='linear', sr=22050,
                              ax=ax[1])
 
+    ax[0].set_title("Magnitude Spectrum")
+    ax[1].set_title("Phase Spectrum")
+    plt.tight_layout()
     plt.savefig(name)
     plt.close()
 

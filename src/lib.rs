@@ -9,8 +9,6 @@ use ndarray_rand::{rand_distr::Uniform, RandomExt};
 use ndarray_stats::errors::MinMaxError;
 use ndarray_stats::QuantileExt;
 use num_traits::{Float, FloatConst, FromPrimitive};
-use rand::SeedableRng;
-use rand_isaac::isaac64::Isaac64Rng;
 use realfft::num_complex::Complex;
 use realfft::num_traits;
 use realfft::num_traits::AsPrimitive;
@@ -130,7 +128,6 @@ impl GriffinLim {
 /// Parameters to provide to the griffin-lim vocoder
 pub struct Parameters<T> {
     momentum: T,
-    seed: u64,
     iter: usize,
     init_random: bool,
 }
@@ -152,7 +149,6 @@ where
     pub fn new() -> Self {
         Self {
             momentum: T::from_f32(0.99).unwrap(),
-            seed: 42,
             iter: 32,
             init_random: true,
         }
@@ -166,12 +162,6 @@ where
     /// Default value is 0.99
     pub fn momentum(mut self, momentum: T) -> Self {
         self.momentum = momentum;
-        self
-    }
-
-    /// A random seed to use for initializing the phase.
-    pub fn seed(mut self, seed: u64) -> Self {
-        self.seed = seed;
         self
     }
 
@@ -316,7 +306,6 @@ where
     Complex<T>: ScalarOperand + WritableElement,
 {
     // set up griffin lim parameters
-    let mut rng = Isaac64Rng::seed_from_u64(params.seed);
     if params.momentum > T::one() || params.momentum < T::zero() {
         bail!("Momentum is {}, should be in range [0,1]", params.momentum);
     }
@@ -326,6 +315,7 @@ where
 
     // Initialise estimate
     let mut estimate = if params.init_random {
+        let mut rng = rand::thread_rng();
         let mut angles = Array2::<T>::random_using(
             spectrogram.raw_dim(),
             Uniform::from(-T::PI()..T::PI()),
