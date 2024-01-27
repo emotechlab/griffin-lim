@@ -14,8 +14,8 @@ jobs:
         with:
           components: rustfmt
       - name: Cargo build
-        run: cargo build --locked
+        run: cargo build
       - name: Cargo test
-        run: cargo test --locked
+        run: cargo test
       - name: Rustfmt
         run: cargo fmt --check
