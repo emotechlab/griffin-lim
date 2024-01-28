@@ -4,6 +4,8 @@ use ndarray::{par_azip, prelude::*, ScalarOperand};
 use ndarray_linalg::error::LinalgError;
 use ndarray_linalg::svd::SVD;
 use ndarray_linalg::{Lapack, Scalar};
+#[cfg(feature = "debug_dump")]
+use ndarray_npy::WritableElement;
 use ndarray_rand::rand_distr::uniform::SampleUniform;
 use ndarray_rand::{rand_distr::Uniform, RandomExt};
 use ndarray_stats::errors::MinMaxError;
@@ -15,8 +17,6 @@ use realfft::num_traits::AsPrimitive;
 use realfft::RealFftPlanner;
 use std::fmt::Display;
 use tracing::warn;
-#[cfg(feature = "debug_dump")]
-use ndarray_npy::WritableElement;
 
 macro_rules! debug_dump_array {
     ($file:expr, $array:expr) => {
@@ -24,7 +24,7 @@ macro_rules! debug_dump_array {
         if let Err(e) = ndarray_npy::write_npy($file, &$array.view()) {
             tracing::error!("Failed to write '{:?}': {}", $file, e);
         }
-    }
+    };
 }
 
 /// Do not use this in any real way. Because we can't cfg on trait bounds and want to ensure the
@@ -32,7 +32,7 @@ macro_rules! debug_dump_array {
 /// it up to here. I tried doing this via trait inheritance but this didn't work for the `Complex<T>`
 /// bound and this seemed the only reliable way.
 #[cfg(not(feature = "debug_dump"))]
-pub trait WritableElement{}
+pub trait WritableElement {}
 
 #[cfg(not(feature = "debug_dump"))]
 impl<T> WritableElement for T {}
@@ -510,6 +510,8 @@ where
 mod tests {
     use float_cmp::assert_approx_eq;
     use ndarray_npy::read_npy;
+    use rand::SeedableRng;
+    use rand_isaac::isaac64::Isaac64Rng;
 
     use super::*;
 
