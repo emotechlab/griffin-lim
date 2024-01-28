@@ -27,22 +27,34 @@ pub struct Args {
     #[clap(long, default_value = "1.7")]
     power: f32,
     #[clap(long, default_value = "10")]
-    iters: usize
+    iters: usize,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let spectrogram: Array2<f32> = read_npy(args.input)?;
 
-    let mel_basis = griffin_lim::mel::create_mel_filter_bank(args.sample_rate as f32, args.ffts, args.mels, 0.0, Some(args.max_frequency));
+    let mel_basis = griffin_lim::mel::create_mel_filter_bank(
+        args.sample_rate as f32,
+        args.ffts,
+        args.mels,
+        0.0,
+        Some(args.max_frequency),
+    );
 
     let timer = Instant::now();
-    let vocoder = GriffinLim::new(mel_basis.clone(), args.ffts - args.hop_length, args.power, args.iters, 0.99)?;
+    let vocoder = GriffinLim::new(
+        mel_basis.clone(),
+        args.ffts - args.hop_length,
+        args.power,
+        args.iters,
+        0.99,
+    )?;
     let audio = vocoder.infer(&spectrogram)?;
     let duration = Instant::now().duration_since(timer);
     let rtf = duration.as_secs_f32() / (audio.len() as f32 / args.sample_rate as f32);
     println!("Iterations: {}, rtf: {}", args.iters, rtf);
-        
+
     let spec = WavSpec {
         channels: 1,
         sample_rate: args.sample_rate,
