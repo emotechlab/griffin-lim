@@ -9,4 +9,5 @@ audio.
 
 To learn more about this algorithm:
 
+* [Our own tutorial](./tutorial/README.md)
 * [Papers with Code](https://paperswithcode.com/method/griffin-lim-algorithm)
