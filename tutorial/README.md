@@ -24,7 +24,7 @@ At the top we have the magnitude domain, this shows for each time slice and freq
 amplitude of different sine waves we'd compose to recreate that signal. Below it is the
 phase, this is the offset in time we'd apply to those same sine waves.
 
-A Short Time Fourier Transform (STFT) is a fourier transform ran on overlapping windows
+A Short Time Fourier Transform (STFT) is a discrete fourier transform ran on overlapping windows
 so we can look at the frequency information of smaller localised slices of time instead
 of the frequency information for the entire audio signal.
 
