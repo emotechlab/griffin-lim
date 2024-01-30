@@ -42,7 +42,7 @@ a more compressed representation. It does that by multiplying the linear spectro
 by a filter bank. So we need to invert that multiplication to go back to a linear
 spectrogram. This is an optimisation problem as with matrix multiplication AB != BA.
 
-So we use a limited-memory BGFS solver to solve for the inverse of the matrix 
+So we use a limited-memory [BGFS](https://en.wikipedia.org/wiki/Broyden–Fletcher–Goldfarb–Shanno_algorithm) solver to solve for the inverse of the matrix 
 multiplication. This is mainly to keep in line with the reference implementation we used.
 
 So if we construct the mel filter bank we get:
