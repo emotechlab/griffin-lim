@@ -20,13 +20,18 @@ domain.
 
 #![image](./resources/trumpet.png)
 
-At the top we have the magnitude domain, this shows for each time slice and frequency the
+At the top we have the magnitude plot, this shows for each time slice and frequency the
 amplitude of different sine waves we'd compose to recreate that signal. Below it is the
 phase, this is the offset in time we'd apply to those same sine waves.
 
-A Short Time Fourier Transform (STFT) is a discrete fourier transform ran on overlapping windows
+The key transform to go from time to frequency domain is a Fourier transform. The Fourier transform
+assumes a signal is periodic (repeats), and then decomposes it into summed sine and cosine waves at
+different magnitudes and phase offsets.
+
+A Short Time Fourier Transform (STFT) is a discrete Fourier transform ran on overlapping windows
 so we can look at the frequency information of smaller localised slices of time instead
-of the frequency information for the entire audio signal.
+of the frequency information for the entire audio signal. This is more useful in practise than using
+a Fourier transform directly.
 
 ## Going from Mel to Linear
 
@@ -38,7 +43,8 @@ To vocode this we need to reconstruct the phase spectrum so we can do an inverse
 transform (ISTFT) to reconstruct the audio.
 
 The mel spectrogram uses mel frequency bands to compress a linear spectrogram to
-a more compressed representation. It does that by multiplying the linear spectrogram
+a more compressed representation. The reason it does this is to be more representative of human
+perception of pitch. It does that by multiplying the linear spectrogram
 by a filter bank. So we need to invert that multiplication to go back to a linear
 spectrogram. This is an optimisation problem as with matrix multiplication AB != BA.
 
