@@ -35,7 +35,7 @@ So to start lets look at our spectrogram we're going to be vocoding.
 ![image](./resources/mel_spec.png)
 
 To vocode this we need to reconstruct the phase spectrum so we can do an inverse
-(STFT) to reconstruct the audio.
+transform (ISTFT) to reconstruct the audio.
 
 The mel spectrogram uses mel frequency bands to compress a linear spectrogram to
 a more compressed representation. It does that by multiplying the linear spectrogram
