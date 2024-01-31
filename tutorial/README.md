@@ -142,7 +142,7 @@ be appreciated!
 
 And listen to the output:
 
-![audio](https://github.com/emotechlab/griffin-lim/raw/docs/super-guide-time/tutorial/output.wav)
+![audio](https://github.com/emotechlab/griffin-lim/raw/main/tutorial/output.wav)
 
 ## Conclusion
 
