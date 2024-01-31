@@ -4,19 +4,38 @@ use ndarray::{par_azip, prelude::*, ScalarOperand};
 use ndarray_linalg::error::LinalgError;
 use ndarray_linalg::svd::SVD;
 use ndarray_linalg::{Lapack, Scalar};
+#[cfg(feature = "debug_dump")]
+use ndarray_npy::WritableElement;
 use ndarray_rand::rand_distr::uniform::SampleUniform;
 use ndarray_rand::{rand_distr::Uniform, RandomExt};
 use ndarray_stats::errors::MinMaxError;
 use ndarray_stats::QuantileExt;
 use num_traits::{Float, FloatConst, FromPrimitive};
-use rand::SeedableRng;
-use rand_isaac::isaac64::Isaac64Rng;
 use realfft::num_complex::Complex;
 use realfft::num_traits;
 use realfft::num_traits::AsPrimitive;
 use realfft::RealFftPlanner;
 use std::fmt::Display;
 use tracing::warn;
+
+macro_rules! debug_dump_array {
+    ($file:expr, $array:expr) => {
+        #[cfg(feature = "debug_dump")]
+        if let Err(e) = ndarray_npy::write_npy($file, &$array.view()) {
+            tracing::error!("Failed to write '{:?}': {}", $file, e);
+        }
+    };
+}
+
+/// Do not use this in any real way. Because we can't cfg on trait bounds and want to ensure the
+/// matrices are dump-able via trait bounds we need to remove the cfg from the trait bound and push
+/// it up to here. I tried doing this via trait inheritance but this didn't work for the `Complex<T>`
+/// bound and this seemed the only reliable way.
+#[cfg(not(feature = "debug_dump"))]
+pub trait WritableElement {}
+
+#[cfg(not(feature = "debug_dump"))]
+impl<T> WritableElement for T {}
 
 pub mod mel;
 
@@ -36,6 +55,7 @@ impl GriffinLim {
         iter: usize,
         momentum: f32,
     ) -> anyhow::Result<Self> {
+        debug_dump_array!("mel_basis.npy", mel_basis);
         let nfft = 2 * (mel_basis.dim().1 - 1);
         if noverlap >= nfft {
             bail!(
@@ -63,6 +83,7 @@ impl GriffinLim {
     }
 
     pub fn infer(&self, mel_spec: &Array2<f32>) -> anyhow::Result<Array1<f32>> {
+        debug_dump_array!("mel_spectrogram.npy", mel_spec);
         // mel_basis has dims (nmel, nfft)
         // lin_spec has dims (nfft, time)
         // mel_spec has dims (nmel, time)
@@ -71,6 +92,7 @@ impl GriffinLim {
 
         // correct for "power" parameter of mel-spectrogram
         lin_spec.mapv_inplace(|x| x.powf(1.0 / self.power));
+        debug_dump_array!("linear_spectrogram.npy", lin_spec);
 
         let params = Parameters {
             momentum: self.momentum,
@@ -106,7 +128,6 @@ impl GriffinLim {
 /// Parameters to provide to the griffin-lim vocoder
 pub struct Parameters<T> {
     momentum: T,
-    seed: u64,
     iter: usize,
     init_random: bool,
 }
@@ -128,7 +149,6 @@ where
     pub fn new() -> Self {
         Self {
             momentum: T::from_f32(0.99).unwrap(),
-            seed: 42,
             iter: 32,
             init_random: true,
         }
@@ -142,12 +162,6 @@ where
     /// Default value is 0.99
     pub fn momentum(mut self, momentum: T) -> Self {
         self.momentum = momentum;
-        self
-    }
-
-    /// A random seed to use for initializing the phase.
-    pub fn seed(mut self, seed: u64) -> Self {
-        self.seed = seed;
         self
     }
 
@@ -273,8 +287,8 @@ pub fn griffin_lim<T>(
     noverlap: usize,
 ) -> anyhow::Result<Array1<T>>
 where
-    T: realfft::FftNum + Float + FloatConst + Display + SampleUniform,
-    Complex<T>: ScalarOperand,
+    T: realfft::FftNum + Float + FloatConst + Display + SampleUniform + WritableElement,
+    Complex<T>: ScalarOperand + WritableElement,
 {
     griffin_lim_with_params(spectrogram, nfft, noverlap, Parameters::new())
 }
@@ -288,11 +302,10 @@ pub fn griffin_lim_with_params<T>(
     params: Parameters<T>,
 ) -> anyhow::Result<Array1<T>>
 where
-    T: realfft::FftNum + Float + FloatConst + Display + SampleUniform,
-    Complex<T>: ScalarOperand,
+    T: realfft::FftNum + Float + FloatConst + Display + SampleUniform + WritableElement,
+    Complex<T>: ScalarOperand + WritableElement,
 {
     // set up griffin lim parameters
-    let mut rng = Isaac64Rng::seed_from_u64(params.seed);
     if params.momentum > T::one() || params.momentum < T::zero() {
         bail!("Momentum is {}, should be in range [0,1]", params.momentum);
     }
@@ -302,6 +315,7 @@ where
 
     // Initialise estimate
     let mut estimate = if params.init_random {
+        let mut rng = rand::thread_rng();
         let mut angles = Array2::<T>::random_using(
             spectrogram.raw_dim(),
             Uniform::from(-T::PI()..T::PI()),
@@ -314,8 +328,11 @@ where
     } else {
         spectrogram.clone()
     };
+    let mut _est_i = 1;
+    debug_dump_array!("estimate_spec_0.npy", estimate);
+
     // TODO: Pre-allocate inverse and rebuilt and use `.assign` instead of `=`
-    // this requires some fighting with the borow checker
+    // this requires some fighting with the borrow checker
     let mut inverse: Array1<T>;
     let mut rebuilt: Array2<Complex<T>>;
     let mut tprev: Option<Array2<Complex<T>>> = None;
@@ -335,12 +352,15 @@ where
         } else {
             tprev = Some(rebuilt);
         }
-        // Get angles from estimate and apply to magnitueds
+        // Get angles from estimate and apply to magnitudes
         let eps = T::min_positive_value();
         // get angles from new estimate
         estimate.mapv_inplace(|x| x / (x.norm() + eps));
         // enforce magnitudes
         estimate.assign(&(&estimate * &spectrogram));
+
+        debug_dump_array!(format!("estimate_spec_{}.npy", _est_i), estimate);
+        _est_i += 1;
     }
     let mut signal = istft(&estimate, &window, planner, nfft, noverlap);
     let norm = T::from(nfft).unwrap();
@@ -490,6 +510,8 @@ where
 mod tests {
     use float_cmp::assert_approx_eq;
     use ndarray_npy::read_npy;
+    use rand::SeedableRng;
+    use rand_isaac::isaac64::Isaac64Rng;
 
     use super::*;
 
