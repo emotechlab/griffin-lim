@@ -5,6 +5,7 @@ edition = "2021"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
 keywords = ["science", "audio", "dsp"]
+categories = ["science"]
 
 [features]
 default = ["ndarray-linalg/intel-mkl"]
