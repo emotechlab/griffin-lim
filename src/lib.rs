@@ -1,3 +1,4 @@
+#![doc = include_str!("../README.md")]
 use anyhow::bail;
 use lbfgsb::lbfgsb;
 use ndarray::{par_azip, prelude::*, ScalarOperand};
@@ -39,6 +40,9 @@ impl<T> WritableElement for T {}
 
 pub mod mel;
 
+/// Griffin lim vocoder instance. This stores parameters and handles converting from mel
+/// spectrogram to linear spectrogram before vocoding. If you already have a linear spectrogram
+/// then [`griffin_lim`] or [`griffin_lim_with_params`] should be used instead.
 pub struct GriffinLim {
     mel_basis: Array2<f32>,
     noverlap: usize,
@@ -48,6 +52,7 @@ pub struct GriffinLim {
 }
 
 impl GriffinLim {
+    /// Create a new griffin lim vocoder.
     pub fn new(
         mel_basis: Array2<f32>,
         noverlap: usize,
@@ -82,6 +87,7 @@ impl GriffinLim {
         })
     }
 
+    /// Convert a mel spectrogram to a sequence of mono PCM samples.
     pub fn infer(&self, mel_spec: &Array2<f32>) -> anyhow::Result<Array1<f32>> {
         debug_dump_array!("mel_spectrogram.npy", mel_spec);
         // mel_basis has dims (nmel, nfft)
@@ -182,7 +188,7 @@ where
 /// Implements the path of functions:
 /// get_window() -> general_hamming() -> general_cosine()
 /// with sym=False
-/// https://github.com/scipy/scipy/blob/b5d8bab88af61d61de09641243848df63380a67f/scipy/signal/windows/_windows.py
+/// Ported from [here](https://github.com/scipy/scipy/blob/b5d8bab88af61d61de09641243848df63380a67f/scipy/signal/windows/_windows.py)
 fn get_hann_window<T: Float + FloatConst>(n: usize) -> Array1<T> {
     let alpha = 0.5;
     let a = vec![T::from(alpha).unwrap(), T::from(1. - alpha).unwrap()];
@@ -281,6 +287,8 @@ fn python_mod(n: i32, base: i32) -> i32 {
     n - base * (n as f32 / base as f32).floor() as i32
 }
 
+/// compute an estimate of real-valued time-domain signal
+/// from a linear magnitude spectrogram. To change parameters use [`griffin_lim_with_params`].
 pub fn griffin_lim<T>(
     spectrogram: &Array2<T>,
     nfft: usize,
@@ -294,7 +302,7 @@ where
 }
 
 /// compute an estimate of real-valued time-domain signal
-/// from a magnitude spectrogram
+/// from a linear magnitude spectrogram
 pub fn griffin_lim_with_params<T>(
     spectrogram: &Array2<T>,
     nfft: usize,
@@ -368,7 +376,7 @@ where
     Ok(signal)
 }
 
-/// https://github.com/scipy/scipy/blob/v1.10.1/scipy/signal/_spectral_py.py#L1220-L1506
+/// Ported from [here](https://github.com/scipy/scipy/blob/v1.10.1/scipy/signal/_spectral_py.py#L1220-L1506). An inverse short time fourier transform
 pub fn istft<T: realfft::FftNum + num_traits::Float>(
     spectrogram: &Array2<Complex<T>>,
     window: &Array1<T>,
@@ -427,6 +435,7 @@ pub fn istft<T: realfft::FftNum + num_traits::Float>(
     output / norm
 }
 
+/// Pseudo matrix inversion errors
 #[derive(Debug, thiserror::Error)]
 pub enum PinvError {
     #[error("SVD calculation failed in pinv: {0}")]
@@ -436,7 +445,7 @@ pub enum PinvError {
 }
 
 /// Compute Moore-Penrose psuedo-inverse matrix using SVD
-/// See https://github.com/numpy/numpy/blob/v1.24.0/numpy/linalg/linalg.py#L1463-L1656
+/// See [here](https://github.com/numpy/numpy/blob/v1.24.0/numpy/linalg/linalg.py#L1463-L1656)
 fn pinv<T: Scalar<Real = T> + Lapack + num_traits::Float>(
     x: &Array2<T>,
     rcond: T,
@@ -456,6 +465,7 @@ fn pinv<T: Scalar<Real = T> + Lapack + num_traits::Float>(
     Ok(v.dot(&Array2::from_diag(&s).dot(&ut)))
 }
 
+/// Non-negative Least Squares optimisation errors.
 #[derive(Debug, thiserror::Error)]
 pub enum NnlsError {
     #[error("Failure to find pseudo-inverse matrix: {0}")]
@@ -465,8 +475,8 @@ pub enum NnlsError {
 }
 
 /// Compute x to minimise ||a.dot(x) - b|| where a, x, b are matrices using l-bfgs-b optimizer
-/// See `_nnls_obj` here: https://librosa.org/doc/main/_modules/librosa/util/_nnls.html
-/// NOTE: The librosa top-level nnls function https://librosa.org/doc/main/_modules/librosa/util/_nnls.html#nnls
+/// See `_nnls_obj` [here](https://librosa.org/doc/main/_modules/librosa/util/_nnls.html)
+/// NOTE: The librosa top-level [nnls function](https://librosa.org/doc/main/_modules/librosa/util/_nnls.html#nnls)
 /// splits the optimisation into chunks to avoid large memory allocations for single calls
 /// For simplicity this is not replicated, but it may be worth investigating if this
 /// function becomes non-performant.

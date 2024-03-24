@@ -1,5 +1,7 @@
+//! A collection of functions useful for mel spectrogram handling.
 use ndarray::prelude::*;
 
+/// Creates a mel filter bank
 pub fn create_mel_filter_bank(
     sample_rate: f32,
     n_fft: usize,
