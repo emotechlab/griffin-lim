@@ -1,6 +1,5 @@
 #![doc = include_str!("../README.md")]
 use anyhow::bail;
-use std::ops::AddAssign;
 use lbfgsb::lbfgsb;
 use ndarray::{par_azip, prelude::*, ScalarOperand};
 use ndarray_linalg::error::LinalgError;
@@ -18,6 +17,7 @@ use realfft::num_traits;
 use realfft::num_traits::AsPrimitive;
 use realfft::RealFftPlanner;
 use std::fmt::Display;
+use std::ops::AddAssign;
 use tracing::warn;
 
 macro_rules! debug_dump_array {
@@ -190,7 +190,7 @@ where
 /// get_window() -> general_hamming() -> general_cosine()
 /// with sym=False
 /// Ported from [here](https://github.com/scipy/scipy/blob/b5d8bab88af61d61de09641243848df63380a67f/scipy/signal/windows/_windows.py)
-fn get_hann_window<T: Float + FloatConst + Zero>(n: usize) -> Array1<T> {
+fn get_hann_window<T: Float + FloatConst + Zero + AddAssign>(n: usize) -> Array1<T> {
     let alpha = 0.5;
     let a = vec![T::from(alpha).unwrap(), T::from(1. - alpha).unwrap()];
 
@@ -203,7 +203,7 @@ fn get_hann_window<T: Float + FloatConst + Zero>(n: usize) -> Array1<T> {
     let mut w = Array1::zeros(m);
     for k in 0..a.len() {
         let fac_cos = fac.mapv(|x| (x * T::from(k).unwrap()).cos() * a[k]);
-        w.add_assign(fac_cos);
+        w += &fac_cos;
         //w.assign(&(&w + fac_cos));
     }
     w.slice(s![..w.shape()[0] - 1]).to_owned() // _truncate(w, True)
@@ -298,8 +298,8 @@ pub fn griffin_lim<T>(
     noverlap: usize,
 ) -> anyhow::Result<Array1<T>>
 where
-    T: realfft::FftNum + Float + FloatConst + Display + SampleUniform + WritableElement,
-    Complex<T>: ScalarOperand + WritableElement,
+    T: realfft::FftNum + Float + FloatConst + Display + SampleUniform + WritableElement + AddAssign,
+    Complex<T>: ScalarOperand + WritableElement + AddAssign,
 {
     griffin_lim_with_params(spectrogram, nfft, noverlap, Parameters::new())
 }
@@ -313,8 +313,8 @@ pub fn griffin_lim_with_params<T>(
     params: Parameters<T>,
 ) -> anyhow::Result<Array1<T>>
 where
-    T: realfft::FftNum + Float + FloatConst + Display + SampleUniform + WritableElement,
-    Complex<T>: ScalarOperand + WritableElement,
+    T: realfft::FftNum + Float + FloatConst + Display + SampleUniform + WritableElement + AddAssign,
+    Complex<T>: ScalarOperand + WritableElement + AddAssign,
 {
     // set up griffin lim parameters
     if params.momentum > T::one() || params.momentum < T::zero() {
@@ -380,7 +380,7 @@ where
 }
 
 /// Ported from [here](https://github.com/scipy/scipy/blob/v1.10.1/scipy/signal/_spectral_py.py#L1220-L1506). An inverse short time fourier transform
-pub fn istft<T: realfft::FftNum + num_traits::Float>(
+pub fn istft<T: realfft::FftNum + num_traits::Float + AddAssign>(
     spectrogram: &Array2<Complex<T>>,
     window: &Array1<T>,
     planner: &mut RealFftPlanner<T>,
@@ -410,7 +410,7 @@ pub fn istft<T: realfft::FftNum + num_traits::Float>(
                 .process(fft.as_slice_mut().unwrap(), ifft.as_slice_mut().unwrap())
                 .unwrap();
             ifft.mapv_inplace(|x| x * winsum / nfft_float);
-            ifft.assign(&(&ifft * &win));
+            ifft += &win;
         }
     );
 
@@ -499,7 +499,7 @@ where
     let a = &a.mapv(|x| x.as_());
     let b = &b.mapv(|x| x.as_());
     let x_shape = x_init.raw_dim();
-    let x_init = x_init.into_raw_vec();
+    let (x_init, _) = x_init.into_raw_vec_and_offset();
     let bounds = vec![(0.0, f64::INFINITY); x_init.len()];
     // Evaluates cost (return value) and gradient (by updating g)
     // with current estimate x
@@ -585,7 +585,7 @@ mod tests {
     #[test]
     fn test_invertible() {
         let mut rng = Isaac64Rng::seed_from_u64(42);
-        let signal = Array1::<f64>::random_using(500, Uniform::from(0.0..1.0), &mut rng);
+        let signal = Array1::<f64>::random_using(500, Uniform::new(0.0, 1.0).unwrap(), &mut rng);
         let window = &get_hann_window(128);
         let planner = &mut RealFftPlanner::new();
         let transformed = stft(&signal, window, planner, 128, 64, true, true);

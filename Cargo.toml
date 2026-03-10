@@ -31,4 +31,4 @@ clap = { version = "4.4.7", features = ["derive"] }
 float-cmp = "0.10.0"
 hound = "3.5.1"
 ndarray-npy = "0.10"
-rand_isaac = "0.3.0"
+rand_isaac = "0.4.0"
