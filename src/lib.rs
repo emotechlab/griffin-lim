@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 use anyhow::bail;
+use std::ops::AddAssign;
 use lbfgsb::lbfgsb;
 use ndarray::{par_azip, prelude::*, ScalarOperand};
 use ndarray_linalg::error::LinalgError;
@@ -202,7 +203,8 @@ fn get_hann_window<T: Float + FloatConst>(n: usize) -> Array1<T> {
     let mut w = Array1::zeros(m);
     for k in 0..a.len() {
         let fac_cos = fac.mapv(|x| (x * T::from(k).unwrap()).cos() * a[k]);
-        w.assign(&(&w + fac_cos));
+        w.add_assign(&fac_cos);
+        //w.assign(&(&w + fac_cos));
     }
     w.slice(s![..w.shape()[0] - 1]).to_owned() // _truncate(w, True)
 }
@@ -258,7 +260,8 @@ fn stft<T: realfft::FftNum + Float>(
         ) as usize; // (-(x.shape[-1]-nperseg) % nstep) % nperseg
         let mut y = Array1::<T>::zeros(y_len as usize + nadd);
         let pad_len = nfft / 2;
-        y.slice_mut(s![pad_len..y.shape()[0] - pad_len - nadd])
+        let y_shape = y.shape()[0];
+        y.slice_mut(s![pad_len..y_shape - pad_len - nadd])
             .assign(&signal);
         y
     } else {
@@ -323,10 +326,10 @@ where
 
     // Initialise estimate
     let mut estimate = if params.init_random {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut angles = Array2::<T>::random_using(
             spectrogram.raw_dim(),
-            Uniform::from(-T::PI()..T::PI()),
+            Uniform::new(-T::PI(), T::PI()).unwrap(),
             &mut rng,
         );
         // realfft doesn't handle invalid input
