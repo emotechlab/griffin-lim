@@ -12,7 +12,7 @@ use ndarray_rand::rand_distr::uniform::SampleUniform;
 use ndarray_rand::{rand_distr::Uniform, RandomExt};
 use ndarray_stats::errors::MinMaxError;
 use ndarray_stats::QuantileExt;
-use num_traits::{Float, FloatConst, FromPrimitive};
+use num_traits::{Float, FloatConst, FromPrimitive, Zero};
 use realfft::num_complex::Complex;
 use realfft::num_traits;
 use realfft::num_traits::AsPrimitive;
@@ -190,7 +190,7 @@ where
 /// get_window() -> general_hamming() -> general_cosine()
 /// with sym=False
 /// Ported from [here](https://github.com/scipy/scipy/blob/b5d8bab88af61d61de09641243848df63380a67f/scipy/signal/windows/_windows.py)
-fn get_hann_window<T: Float + FloatConst>(n: usize) -> Array1<T> {
+fn get_hann_window<T: Float + FloatConst + Zero>(n: usize) -> Array1<T> {
     let alpha = 0.5;
     let a = vec![T::from(alpha).unwrap(), T::from(1. - alpha).unwrap()];
 
@@ -203,7 +203,7 @@ fn get_hann_window<T: Float + FloatConst>(n: usize) -> Array1<T> {
     let mut w = Array1::zeros(m);
     for k in 0..a.len() {
         let fac_cos = fac.mapv(|x| (x * T::from(k).unwrap()).cos() * a[k]);
-        w.add_assign(&fac_cos);
+        w.add_assign(fac_cos);
         //w.assign(&(&w + fac_cos));
     }
     w.slice(s![..w.shape()[0] - 1]).to_owned() // _truncate(w, True)
@@ -368,7 +368,7 @@ where
         // get angles from new estimate
         estimate.mapv_inplace(|x| x / (x.norm() + eps));
         // enforce magnitudes
-        estimate.assign(&(&estimate * &spectrogram));
+        estimate += &spectrogram;
 
         debug_dump_array!(format!("estimate_spec_{}.npy", _est_i), estimate);
         _est_i += 1;
@@ -424,9 +424,9 @@ pub fn istft<T: realfft::FftNum + num_traits::Float>(
         let idx = ii * nstep;
         // Compound assignment for arrays requires nightly, so have to assign
         let mut output_slice = output.slice_mut(s![idx..idx + nfft]);
-        output_slice.assign(&(&output_slice + &ifft_subs.row(ii)));
+        output_slice += &ifft_subs.row(ii);
         let mut norm_slice = norm.slice_mut(s![idx..idx + nfft]);
-        norm_slice.assign(&(&norm_slice + &win2));
+        norm_slice += &win2;
     }
     let tr = nfft as i32 / 2;
     let norm = norm.slice(s![tr..-tr]).to_owned();
@@ -462,7 +462,7 @@ fn pinv<T: Scalar<Real = T> + Lapack + num_traits::Float>(
     let v = v.slice(s![.., ..dim.0.min(v.dim().1)]);
     // Ignore small singular values
     // NOTE: Maybe don't need this error if NaNs in results causes .svd() to return an error
-    let cutoff = *Array1::max(&s).map_err(PinvError::MinMaxError)? * rcond;
+    let cutoff = *s.max().map_err(PinvError::MinMaxError)? * rcond;
     s.mapv_inplace(|x| if x > cutoff { T::one() / x } else { T::zero() });
     // Could use broadcasting instead of from_diag?
     Ok(v.dot(&Array2::from_diag(&s).dot(&ut)))
@@ -523,7 +523,7 @@ where
 mod tests {
     use float_cmp::assert_approx_eq;
     use ndarray_npy::read_npy;
-    use rand::SeedableRng;
+    use rand::rand_core::SeedableRng;
     use rand_isaac::isaac64::Isaac64Rng;
 
     use super::*;
