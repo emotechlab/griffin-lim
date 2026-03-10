@@ -17,7 +17,7 @@ use realfft::num_traits;
 use realfft::num_traits::AsPrimitive;
 use realfft::RealFftPlanner;
 use std::fmt::Display;
-use std::ops::AddAssign;
+use std::ops::{AddAssign, MulAssign};
 use tracing::warn;
 
 macro_rules! debug_dump_array {
@@ -298,8 +298,15 @@ pub fn griffin_lim<T>(
     noverlap: usize,
 ) -> anyhow::Result<Array1<T>>
 where
-    T: realfft::FftNum + Float + FloatConst + Display + SampleUniform + WritableElement + AddAssign,
-    Complex<T>: ScalarOperand + WritableElement + AddAssign,
+    T: realfft::FftNum
+        + Float
+        + FloatConst
+        + Display
+        + SampleUniform
+        + WritableElement
+        + AddAssign
+        + MulAssign,
+    Complex<T>: ScalarOperand + WritableElement + MulAssign,
 {
     griffin_lim_with_params(spectrogram, nfft, noverlap, Parameters::new())
 }
@@ -313,8 +320,15 @@ pub fn griffin_lim_with_params<T>(
     params: Parameters<T>,
 ) -> anyhow::Result<Array1<T>>
 where
-    T: realfft::FftNum + Float + FloatConst + Display + SampleUniform + WritableElement + AddAssign,
-    Complex<T>: ScalarOperand + WritableElement + AddAssign,
+    T: realfft::FftNum
+        + Float
+        + FloatConst
+        + Display
+        + SampleUniform
+        + WritableElement
+        + AddAssign
+        + MulAssign,
+    Complex<T>: ScalarOperand + WritableElement + MulAssign,
 {
     // set up griffin lim parameters
     if params.momentum > T::one() || params.momentum < T::zero() {
@@ -368,7 +382,7 @@ where
         // get angles from new estimate
         estimate.mapv_inplace(|x| x / (x.norm() + eps));
         // enforce magnitudes
-        estimate += &spectrogram;
+        estimate *= &spectrogram;
 
         debug_dump_array!(format!("estimate_spec_{}.npy", _est_i), estimate);
         _est_i += 1;
@@ -380,7 +394,7 @@ where
 }
 
 /// Ported from [here](https://github.com/scipy/scipy/blob/v1.10.1/scipy/signal/_spectral_py.py#L1220-L1506). An inverse short time fourier transform
-pub fn istft<T: realfft::FftNum + num_traits::Float + AddAssign>(
+pub fn istft<T: realfft::FftNum + num_traits::Float + AddAssign + MulAssign>(
     spectrogram: &Array2<Complex<T>>,
     window: &Array1<T>,
     planner: &mut RealFftPlanner<T>,
@@ -410,7 +424,7 @@ pub fn istft<T: realfft::FftNum + num_traits::Float + AddAssign>(
                 .process(fft.as_slice_mut().unwrap(), ifft.as_slice_mut().unwrap())
                 .unwrap();
             ifft.mapv_inplace(|x| x * winsum / nfft_float);
-            ifft += &win;
+            ifft *= &win;
         }
     );
 
